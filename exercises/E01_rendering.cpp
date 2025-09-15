@@ -29,6 +29,7 @@ struct SDLContext
 	bool btn_pressed_left  = false;
 	bool btn_pressed_right = false;
 	bool btn_pressed_spacebar = false;
+	bool btn_pressed_spacebar_prev = false; // we track the previous state of the spacebar and only fire a bullet on spawn on the transition
 };
 
 struct Entity
@@ -66,6 +67,14 @@ static float distance_between_sq(SDL_FPoint a, SDL_FPoint b)
 	float dy = a.y - b.y;
 	return dx*dx + dy*dy;
 }
+
+// hint: create a helper like this, then call it from collision & off-screen cases
+static void respawn_asteroid(Entity* asteroid, SDLContext* ctx, float size, float speed_min, float speed_range) {
+	asteroid->position.x = size + SDL_randf() * (ctx->window_w - size * 2);
+	asteroid->position.y = -size;
+	asteroid->velocity   = speed_min + SDL_randf() * speed_range;
+}
+
 
 static void init(SDLContext* context, GameState* game_state)
 {
@@ -185,6 +194,8 @@ static void init(SDLContext* context, GameState* game_state)
 
 static void update(SDLContext* context, GameState* game_state)
 {
+	bool restart_requested = false;
+
 	// player
 	{
 		Entity* entity_player = &game_state->player;
@@ -206,6 +217,15 @@ static void update(SDLContext* context, GameState* game_state)
 			&entity_player->texture_rect,
 			&entity_player->rect
 		);
+
+		// if player position is outside window, stop them
+		if (entity_player->position.x + entity_player->size >= context->window_w) {
+			entity_player->position.x = context->window_w - entity_player->rect.w;
+		}
+
+		if (entity_player->position.x <= 0 ) {
+			entity_player->position.x = 0;
+		}
 	}
 
 	// asteroids
@@ -226,8 +246,10 @@ static void update(SDLContext* context, GameState* game_state)
 			asteroid_curr->rect.y = asteroid_curr->position.y;
 
 			float distance_sq = distance_between_sq(asteroid_curr->position, game_state->player.position);
-			if(distance_sq < collision_distance_sq)
+			if(distance_sq < collision_distance_sq){
 				SDL_SetTextureColorMod(asteroid_curr->texture_atlas, 0xFF, 0x00, 0x00);
+				restart_requested = true;
+			}
 			else if(distance_sq < warning_distance_sq)
 				SDL_SetTextureColorMod(asteroid_curr->texture_atlas, 0xCC, 0xCC, 0x00);
 			else
@@ -244,7 +266,7 @@ static void update(SDLContext* context, GameState* game_state)
 
 	//bullets init
 	{
-		if (context->btn_pressed_spacebar)
+		if (context->btn_pressed_spacebar && !context->btn_pressed_spacebar_prev) // we store the state of the spacebar from the last frame. If this condition is true and false (which would become true because its inverted) then it means "we are pressing spacebar, but it was not pressed last frame, meaning we just pressed it"
 		{
 			for (int i = 0; i < NUM_BULLETS; ++i)
 			{
@@ -276,6 +298,8 @@ static void update(SDLContext* context, GameState* game_state)
 		for (int i = 0; i < NUM_BULLETS; ++i)
 		{
 			Entity* bullet_curr = &game_state->bullets[i];
+			SDL_FPoint bullet_center;
+
 			if (bullet_curr->alive == false) continue;
 
 			// move up
@@ -283,6 +307,39 @@ static void update(SDLContext* context, GameState* game_state)
 
 			bullet_curr->rect.x = bullet_curr->position.x;
 			bullet_curr->rect.y = bullet_curr->position.y;
+
+			// check collisions against every asteroid
+			// get center positions of bullet instead of top left which is default
+			bullet_center.x = bullet_curr->position.x + bullet_curr->size*0.5;
+			bullet_center.y = bullet_curr->position.y + bullet_curr->size*0.5;
+
+			// iterate over every asteroid and check for collision
+			bool hit = false;
+			for(int j = 0; j < NUM_ASTEROIDS; ++j) {
+				Entity* asteroid_curr = &game_state->asteroids[j];
+				SDL_FPoint asteroid_center;
+
+				// get center positions of asteroid instead of top left which is default
+				asteroid_center.x = asteroid_curr->position.x + asteroid_curr->size*0.5;
+				asteroid_center.y = asteroid_curr->position.y + asteroid_curr->size*0.5;
+
+				float distance = distance_between_sq(bullet_center, asteroid_center);
+				float radius = (bullet_curr->size * 0.5f) + (asteroid_curr->size * 0.5f);
+
+				//if the distance is less than the combined radius of the two targets, they are overlapping
+				if (distance < radius * radius) {
+					bullet_curr->alive = false;
+
+					// respawn asteroid
+					asteroid_curr->position.y = -asteroid_curr->size;
+					asteroid_curr->position.x = asteroid_curr->size + SDL_randf() * (context->window_w - asteroid_curr->size * 2);
+
+					hit = true;
+					break;
+				}
+			}
+
+			if (hit) continue;
 
 			// if off-screen, set to false again
 			if (bullet_curr->rect.y + bullet_curr->rect.h < 0) {
@@ -301,6 +358,10 @@ static void update(SDLContext* context, GameState* game_state)
 				&bullet_curr->rect
 			);
 		}
+	}
+	context->btn_pressed_spacebar_prev = context->btn_pressed_spacebar; // we store the previous state of the spacebar, so we cant hold it down if it was already held down last frame
+	if (restart_requested) {
+		context->btn_pressed_spacebar_prev = false;
 	}
 }
 
