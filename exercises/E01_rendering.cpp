@@ -4,7 +4,7 @@
 
 #define ENABLE_DIAGNOSTICS
 #define NUM_ASTEROIDS 10
-
+#define NUM_BULLETS 64
 
 #define VALIDATE(expression) if(!(expression)) { SDL_Log("%s\n", SDL_GetError()); }
 
@@ -28,6 +28,7 @@ struct SDLContext
 	bool btn_pressed_down  = false;
 	bool btn_pressed_left  = false;
 	bool btn_pressed_right = false;
+	bool btn_pressed_spacebar = false;
 };
 
 struct Entity
@@ -39,12 +40,15 @@ struct Entity
 	SDL_FRect    rect;
 	SDL_Texture* texture_atlas;
 	SDL_FRect    texture_rect;
+
+	bool		 alive; // Added alive flag to check how many bullets are active
 };
 
 struct GameState
 {
 	Entity player;
 	Entity asteroids[NUM_ASTEROIDS];
+	Entity bullets[NUM_BULLETS]; // Added bullets with same Entity struct and new pool size
 
 	SDL_Texture* texture_atlas;
 };
@@ -66,7 +70,7 @@ static float distance_between_sq(SDL_FPoint a, SDL_FPoint b)
 static void init(SDLContext* context, GameState* game_state)
 {
 	// NOTE: these are a "design" parameter
-	//       it is worth specifying a proper 
+	//       it is worth specifying a proper
 	const float entity_size_world = 64;
 	const float entity_size_texture = 128;
 	const float player_speed = entity_size_world * 5;
@@ -76,6 +80,11 @@ static void init(SDLContext* context, GameState* game_state)
 	const float asteroid_speed_range = entity_size_world * 4;
 	const int   asteroid_sprite_coords_x = 0;
 	const int   asteroid_sprite_coords_y = 4;
+	// Bullets
+	const int bullet_speed = entity_size_world * 4;
+	const int bullet_sprite_coords_x = 4;
+	const int bullet_sprite_coords_y = 3;
+
 	// load textures
 	{
 		int w = 0;
@@ -93,7 +102,7 @@ static void init(SDLContext* context, GameState* game_state)
 		//       - if everythig looks right, you might just need to flip the channel order, because of SDL
 		SDL_Surface* surface = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_ABGR8888, pixels, w * n);
 		game_state->texture_atlas = SDL_CreateTextureFromSurface(context->renderer, surface);
-		
+
 		// NOTE: the texture will make a copy of the pixel data, so after creatio we can release both surface and pixel data
 		SDL_DestroySurface(surface);
 		stbi_image_free(pixels);
@@ -141,13 +150,44 @@ static void init(SDLContext* context, GameState* game_state)
 			asteroid_curr->texture_rect.y = entity_size_texture * asteroid_sprite_coords_y;
 		}
 	}
+
+	// bullets
+	{
+		for (int i = 0; i < NUM_BULLETS; ++i)
+		{
+			Entity* bullet_curr = &game_state->bullets[i];
+
+			// picking the atlas, aka the tilemap which we will select the sprite in later
+			bullet_curr->texture_atlas = game_state->texture_atlas;
+
+			// Active flag, false until we press spacebar ;)
+			bullet_curr->alive = false;
+
+			// picking the sprite in the tilemap
+			bullet_curr->texture_rect.x = entity_size_texture * bullet_sprite_coords_x;
+			bullet_curr->texture_rect.y = entity_size_texture * bullet_sprite_coords_y;
+
+			// bullet size in the game world
+			bullet_curr->size = entity_size_world * 0.33f; // bullet size, scaled it down
+			bullet_curr->rect.w = bullet_curr->size;
+			bullet_curr->rect.h = bullet_curr->size;
+
+			// sprite size (in the tilemap)
+			bullet_curr->texture_rect.w = entity_size_texture;
+			bullet_curr->texture_rect.h = entity_size_texture;
+
+			// velocity, speed of the bullet
+			bullet_curr->velocity = bullet_speed;
+
+		}
+	}
 }
 
 static void update(SDLContext* context, GameState* game_state)
 {
 	// player
 	{
-		Entity* entity_player = &game_state->player; 
+		Entity* entity_player = &game_state->player;
 		if(context->btn_pressed_up)
 			entity_player->position.y -= context->delta * entity_player->velocity;
 		if(context->btn_pressed_down)
@@ -198,6 +238,67 @@ static void update(SDLContext* context, GameState* game_state)
 				asteroid_curr->texture_atlas,
 				&asteroid_curr->texture_rect,
 				&asteroid_curr->rect
+			);
+		}
+	}
+
+	//bullets init
+	{
+		if (context->btn_pressed_spacebar)
+		{
+			for (int i = 0; i < NUM_BULLETS; ++i)
+			{
+				Entity* bullet_curr = &game_state->bullets[i];
+
+				// look for the first available bullet
+				if (bullet_curr->alive == false)
+				{
+					// set to true, cuz were using it
+					bullet_curr->alive = true;
+
+					// set x position to middle of player
+					bullet_curr->position.x = game_state->player.position.x + (game_state->player.size - bullet_curr->size) * 0.5;
+
+					// set y position to just above the player
+					bullet_curr->position.y = game_state->player.position.y - bullet_curr->size * 0.25f;
+
+					bullet_curr->rect.x = bullet_curr->position.x;
+					bullet_curr->rect.y = bullet_curr->position.y;
+
+					break;
+				}
+			}
+		}
+	}
+
+	// bullet pt 2: move, cull, draw
+	{
+		for (int i = 0; i < NUM_BULLETS; ++i)
+		{
+			Entity* bullet_curr = &game_state->bullets[i];
+			if (bullet_curr->alive == false) continue;
+
+			// move up
+			bullet_curr->position.y -= context->delta * bullet_curr->velocity;
+
+			bullet_curr->rect.x = bullet_curr->position.x;
+			bullet_curr->rect.y = bullet_curr->position.y;
+
+			// if off-screen, set to false again
+			if (bullet_curr->rect.y + bullet_curr->rect.h < 0) {
+				bullet_curr->alive = false;
+				continue;
+			}
+
+			// reset atlas tint
+			SDL_SetTextureColorMod(bullet_curr->texture_atlas, 0xFF, 0xFF, 0xFF);
+
+			// draw
+			SDL_RenderTexture(
+				context->renderer,
+				bullet_curr->texture_atlas,
+				&bullet_curr->texture_rect,
+				&bullet_curr->rect
 			);
 		}
 	}
@@ -259,6 +360,8 @@ int main(void)
 						context.btn_pressed_down = event.key.down;
 					if(event.key.key == SDLK_D)
 						context.btn_pressed_right = event.key.down;
+					if(event.key.key == SDLK_SPACE)
+						context.btn_pressed_spacebar = event.key.down;
 			}
 		}
 
