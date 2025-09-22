@@ -16,7 +16,7 @@
 #define WINDOW_W 800
 #define WINDOW_H 600
 
-#define ENTITY_COUNT 128
+#define ENTITY_COUNT 6000
 #define MAX_COLLISIONS 1024   // num max collisions per frame
 
 bool DEBUG_separate_collisions   = true;
@@ -120,6 +120,7 @@ struct Entity
 	// collider info
 	float collider_radius;
 	vec2f collider_offset;
+	bool is_static;
 };
 
 static Entity* entity_create(GameState* state)
@@ -168,6 +169,10 @@ static void collision_check(GameState* state)
 		for(int j = i + 1; j < state->entities_alive_count; ++j)
 		{
 			Entity* e2 = &state->entities[j];
+
+			if (e1->is_static && e2->is_static) {
+				continue; // skip all work for this pair
+			}
 
 			if(itu_lib_overlaps_circle_circle(
 				e1->position + e1->collider_offset, e1->collider_radius,
@@ -260,7 +265,31 @@ static void game_reset(SDLContext* context, GameState* state)
 			SDL_Log("[WARNING] too many entity spawned!");
 			break;
 		}
-		
+
+		entity->is_static = (SDL_randf() < 0.75f);
+		vec2f coords = vec2f{ 1.5f + i % 3, 1.5f + i / 3};
+		entity->size = vec2f{ 64, 64 };
+		entity->position = mul_element_wise(entity->size,  coords);
+		entity->sprite = {
+			.texture = state->atlas,
+			.rect = SDL_FRect{ 0, 4*128, 128, 128 },
+			.tint = COLOR_WHITE,
+			.pivot = vec2f{ 0.5f, 0.5f }
+		};
+		entity->collider_radius = 32;
+	}
+
+	// Continue spawning until pool is full
+	for(int i = 0; i < ENTITY_COUNT; ++i)
+	{
+		Entity* entity = entity_create(state);
+		if(!entity)
+		{
+			SDL_Log("[WARNING] too many entity spawned!");
+			break;
+		}
+
+		entity->is_static = (SDL_randf() < 0.75f);
 		vec2f coords = vec2f{ 1.5f + i % 3, 1.5f + i / 3};
 		entity->size = vec2f{ 64, 64 };
 		entity->position = mul_element_wise(entity->size,  coords);
@@ -293,7 +322,7 @@ static void game_update(SDLContext* context, GameState* state)
 	for(int i = 0; i < state->entities_alive_count; ++i)
 	{
 		Entity* entity = &state->entities[i];
-		entity->sprite.tint = COLOR_WHITE;
+    	entity->sprite.tint = entity->is_static ? COLOR_YELLOW : COLOR_WHITE;
 	}
 
 	collision_check(state);
