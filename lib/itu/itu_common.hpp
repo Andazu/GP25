@@ -1,9 +1,11 @@
 #ifndef ITU_COMMON_HPP
 #define ITU_COMMON_HPP
 
+#ifndef ITU_UNITY_BUILD
 #include <SDL3/SDL_log.h>    // SDL_Log()
 #include <SDL3/SDL_error.h>  // SDL_Error()
 #include <SDL3/SDL_stdinc.h> // SDL_assert(), all math functions and macros
+#endif
 
 // *******************************************************************
 // common macros
@@ -33,6 +35,11 @@
 //       - sizeof(int[3]) == sizeof(int) * 3
 //       - sizeof(int*)   == 8 (or 4 if you are targeting a 32bit build)
 #define array_size(x) (sizeof(x) / sizeof((x)[0]))
+
+// casts a value type to another value type
+// NOTE: `type` must be a type
+// NOTE: `x` must be a value variable (not expression, not return value, just a variable)
+#define value_cast(type, x) *(type*)(&(x))
 
 // trigonometric macros
 #define PI_HALF 1.570796f // radians equivalent of 45 degrees
@@ -229,6 +236,11 @@ inline vec2f lerp(vec2f a, vec2f b, float t)
 	ret.x = a.x * t + (1 - t) * b.x;
 	ret.y = a.y * t + (1 - t) * b.y;
 	return ret;
+}
+
+inline vec2f reflect(vec2f a, vec2f n)
+{
+	return a - n * (2*dot(a, n));
 }
 
 // *******************************************************************

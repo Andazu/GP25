@@ -8,6 +8,11 @@ FILE(COPY data DESTINATION ${CMAKE_BINARY_DIR})
 
 # 3rd party libraries
 add_subdirectory(lib/SDL)
+add_subdirectory(lib/box2d)
+# changed imgui to be compiled as part of the game executable
+add_subdirectory(lib/imgui)
+
+# our libraries
 include_directories(lib/stb)
 
 # repo's executables
