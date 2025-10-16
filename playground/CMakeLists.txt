@@ -2,5 +2,10 @@ file(GLOB file_src_list "*.c" "*.cpp")
 
 foreach(file_src ${file_src_list})
 	get_filename_component(targetname ${file_src} NAME)
-	add_executable(${targetname} ${file_src})
+	add_executable(${targetname} ${file_src}
+			hello_world.cpp
+			hello_world.h)
+
+	target_include_directories(${targetname} PRIVATE ${CMAKE_SOURCE_DIR}/lib/itu)
+	target_link_libraries(${targetname} PRIVATE SDL3::SDL3)
 endforeach()
