@@ -7,6 +7,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 
 #include <SDL3/SDL.h>
+#include <SDL3_mixer/SDL_mixer.h>
 
 #include <stb_ds.h>
 #include <stb_image.h>
@@ -23,4 +24,7 @@
 #include <itu_lib_overlaps.hpp>
 #include <itu_lib_sprite.hpp>
 #include <itu_lib_imgui.hpp>
-#include <itu_lib_box2d.hpp>
+
+// // deprecated
+// #include <itu_lib_box2d.hpp>
+#include <itu_sys_physics.hpp>

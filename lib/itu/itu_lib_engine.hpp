@@ -244,7 +244,7 @@ void sdl_input_mouse_button_process(SDLContext* context, BtnType button_id, SDL_
 SDL_Texture* texture_create(SDLContext* context, const char* path, SDL_ScaleMode mode)
 {
 	// texture could accept which pixel format it has as parameter, but this for now seems good enough
-	const SDL_PixelFormat pixel_format = SDL_PIXELFORMAT_ABGR8888;
+	const SDL_PixelFormat pixel_format = SDL_PIXELFORMAT_RGBA32;
 
 	// number of parameters is determined by the pixel format. If that is allowed to change in the future,
 	// we will need to acquire the correct one through some kind of mapping
@@ -256,7 +256,7 @@ SDL_Texture* texture_create(SDLContext* context, const char* path, SDL_ScaleMode
 	// TODO how do we recover from inability to load the asset? Do we want to?
 	SDL_assert(pixels);
 
-	SDL_Surface* surface = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_ABGR8888, pixels, w * num_components_requested);
+	SDL_Surface* surface = SDL_CreateSurfaceFrom(w, h, pixel_format, pixels, w * num_components_requested);
 
 	SDL_Texture* ret = SDL_CreateTextureFromSurface(context->renderer, surface);
 	SDL_SetTextureScaleMode(ret, mode);
