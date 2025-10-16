@@ -1,10 +1,9 @@
 #define STB_IMAGE_IMPLEMENTATION
-
-#define ITU_UNITY_BUILD
-
+#define ITU_LIB_ENGINE_IMPLEMENTATION
+#define ITU_LIB_RENDER_IMPLEMENTATION
+#define ITU_LIB_OVERLAPS_IMPLEMENTATION
 
 #include <SDL3/SDL.h>
-#include <stb_image.h>
 
 #include <itu_common.hpp>
 #include <itu_lib_render.hpp>
@@ -16,7 +15,7 @@
 #define WINDOW_W 800
 #define WINDOW_H 600
 
-#define ENTITY_COUNT 128
+#define ENTITY_COUNT 6000
 #define MAX_COLLISIONS 1024   // num max collisions per frame
 
 bool DEBUG_separate_collisions   = true;
@@ -26,7 +25,7 @@ bool DEBUG_render_texture_border = false;
 struct Entity;
 struct EntityCollisionInfo;
 
-struct SDLContext
+struct MySDLContext
 {
 	SDL_Renderer* renderer;
 	float zoom;     // render zoom
@@ -58,7 +57,7 @@ struct GameState
 	SDL_Texture* atlas;
 };
 
-static SDL_Texture* texture_create(SDLContext* context, const char* path)
+static SDL_Texture* texture_create(MySDLContext* context, const char* path)
 {
 	int w=0, h=0, n=0;
 	unsigned char* pixels = stbi_load(path, &w, &h, &n, 0);
@@ -87,7 +86,7 @@ struct Sprite
 // quick sprite rendering function that takes care of most of the functionalities
 // NOTE: this function is still temporary since ATM we can't really deal with game worlds bigger than the rendering window
 //       we will address it in lecture 03, and then we will just create a final sprite system and be done with it
-static void sprite_render(SDLContext* context, vec2f position, vec2f size, Sprite* sprite)
+static void sprite_render(MySDLContext* context, vec2f position, vec2f size, Sprite* sprite)
 {
 	SDL_FRect dst_rect;
 	dst_rect.w = size.x;
@@ -120,6 +119,7 @@ struct Entity
 	// collider info
 	float collider_radius;
 	vec2f collider_offset;
+	bool is_static;
 };
 
 static Entity* entity_create(GameState* state)
@@ -169,6 +169,10 @@ static void collision_check(GameState* state)
 		{
 			Entity* e2 = &state->entities[j];
 
+			if (e1->is_static && e2->is_static) {
+				continue; // skip all work for this pair
+			}
+
 			if(itu_lib_overlaps_circle_circle(
 				e1->position + e1->collider_offset, e1->collider_radius,
 				e2->position + e2->collider_offset, e2->collider_radius
@@ -214,7 +218,7 @@ static void collision_separate(GameState* state)
 // game
 // ********************************************************************************************************************
 
-static void game_init(SDLContext* context, GameState* state)
+static void game_init(MySDLContext* context, GameState* state)
 {
 	// contiguous memory
 	{
@@ -230,7 +234,7 @@ static void game_init(SDLContext* context, GameState* state)
 
 }
 
-static void game_reset(SDLContext* context, GameState* state)
+static void game_reset(MySDLContext* context, GameState* state)
 {
 	SDL_memset(state->entities, 0, ENTITY_COUNT * sizeof(Entity));
 	state->entities_alive_count = 0;
@@ -242,12 +246,10 @@ static void game_reset(SDLContext* context, GameState* state)
 	player->position.x = (float)context->window_w / 2;
 	player->position.y = (float)context->window_h / 2;
 	player->size = vec2f{ 64, 64 };
-	player->sprite = {
-		.texture = state->atlas,
-		.rect = SDL_FRect{ 0, 0, 128, 128 },
-		.tint = COLOR_WHITE,
-		.pivot = vec2f{ 0.5f, 0.5f }
-	};
+	player->sprite.texture = state->atlas;
+	player->sprite.rect = SDL_FRect{ 0, 0, 128, 128 };
+	player->sprite.tint = COLOR_WHITE;
+	player->sprite.pivot = vec2f{ 0.5f, 0.5f };
 	player->collider_radius = 16;
 	state->player = player;
 
@@ -260,7 +262,8 @@ static void game_reset(SDLContext* context, GameState* state)
 			SDL_Log("[WARNING] too many entity spawned!");
 			break;
 		}
-		
+
+		entity->is_static = (SDL_randf() < 0.75f);
 		vec2f coords = vec2f{ 1.5f + i % 3, 1.5f + i / 3};
 		entity->size = vec2f{ 64, 64 };
 		entity->position = mul_element_wise(entity->size,  coords);
@@ -272,9 +275,30 @@ static void game_reset(SDLContext* context, GameState* state)
 		};
 		entity->collider_radius = 32;
 	}
+
+	// Continue spawning until pool is full
+	for(int i = 0; i < ENTITY_COUNT; ++i)
+	{
+		Entity* entity = entity_create(state);
+		if(!entity)
+		{
+			SDL_Log("[WARNING] too many entity spawned!");
+			break;
+		}
+
+		entity->is_static = (SDL_randf() < 0.75f);
+		vec2f coords = vec2f{ 1.5f + i % 3, 1.5f + i / 3};
+		entity->size = vec2f{ 64, 64 };
+		entity->position = mul_element_wise(entity->size,  coords);
+		entity->sprite.texture = state->atlas;
+		entity->sprite.rect = SDL_FRect{ 0, 4*128, 128, 128 };
+		entity->sprite.tint = COLOR_WHITE,
+		entity->sprite.pivot = vec2f{ 0.5f, 0.5f };
+		entity->collider_radius = 32;
+	}
 }
 
-static void game_update(SDLContext* context, GameState* state)
+static void game_update(MySDLContext* context, GameState* state)
 {
 	vec2f mov = { 0 };
 	if(context->btn_isdown_up)
@@ -293,7 +317,7 @@ static void game_update(SDLContext* context, GameState* state)
 	for(int i = 0; i < state->entities_alive_count; ++i)
 	{
 		Entity* entity = &state->entities[i];
-		entity->sprite.tint = COLOR_WHITE;
+    	entity->sprite.tint = entity->is_static ? COLOR_YELLOW : COLOR_WHITE;
 	}
 
 	collision_check(state);
@@ -301,7 +325,7 @@ static void game_update(SDLContext* context, GameState* state)
 		collision_separate(state);
 }
 
-static void game_render(SDLContext* context, GameState* state)
+static void game_render(MySDLContext* context, GameState* state)
 {
 	// render
 	for(int i = 0; i < state->entities_alive_count; ++i)
@@ -331,7 +355,7 @@ int main(void)
 	int a = sizeof(int*);
 	bool quit = false;
 	SDL_Window* window;
-	SDLContext context = { 0 };
+	MySDLContext context = { 0 };
 	GameState  state   = { 0 };
 
 	context.window_w = WINDOW_W;

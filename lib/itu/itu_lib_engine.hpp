@@ -6,9 +6,11 @@
 #ifndef ITU_LIB_ENGINE_HPP
 #define ITU_LIB_ENGINE_HPP
 
+#ifndef ITU_UNITY_BUILD
 #include <SDL3/SDL.h>
 #include <stb_image.h>
 #include <itu_common.hpp>
+#endif
 
 enum BtnType
 {
@@ -30,10 +32,13 @@ struct Transform
 	float rotation;
 };
 
+struct SDLContext;
+
 struct Camera
 {
-	vec2f position;
-	vec2f size;
+	vec2f world_position; // world position
+	vec2f normalized_screen_size;     // NORMALIZED size   (inside the screen rect)
+	vec2f normalized_screen_offset;   // NORMALIZED offset (inside the screen rect)
 	float zoom;
 	float pixels_per_unit;
 };
@@ -48,7 +53,9 @@ struct SDLContext
 	float delta;    // in seconds
 	float uptime;   // in seconds
 
-	Camera camera;
+	Camera* camera_active;
+	Camera camera_default; // default camera
+
 	union
 	{
 		bool btn_isdown[BTN_TYPE_MAX];
@@ -82,51 +89,138 @@ struct SDLContext
 	float mouse_scroll;
 };
 
-inline SDL_FRect rect_global_to_screen(Camera* camera, SDL_FRect rect)
+void camera_set_active(SDLContext* context, Camera* camera);
+SDL_FRect rect_global_to_screen(SDLContext* context, SDL_FRect rect);
+vec2f point_global_to_screen(SDLContext* context,vec2f p);
+vec2f point_screen_to_global(SDLContext* context, vec2f p);
+void sdl_input_clear(SDLContext* context);
+void sdl_input_key_process(SDLContext* context, BtnType button_id, SDL_Event* event);
+SDL_Texture* texture_create(SDLContext* context, const char* path, SDL_ScaleMode mode);
+void sdl_set_render_draw_color(SDLContext* context, color c);
+void sdl_set_texture_tint(SDL_Texture* texture, color c);
+
+#endif // ITU_LIB_ENGINE_HPP
+
+#if (defined ITU_LIB_ENGINE_IMPLEMENTATION) || (defined ITU_UNITY_BUILD)
+
+void camera_set_active(SDLContext* context, Camera* camera)
 {
+	context->camera_active = camera;
+
+	SDL_Rect rect;
+	rect.w = context->window_w * camera->normalized_screen_size.x;
+	rect.h = context->window_h * camera->normalized_screen_size.y;
+	rect.x = context->window_w * camera->normalized_screen_offset.x;
+	rect.y = context->window_h * camera->normalized_screen_offset.y;
+
+	SDL_SetRenderViewport(context->renderer, &rect);
+}
+
+// converts the given rect to the viewport of the given camera
+SDL_FRect rect_global_to_screen(SDLContext* context, SDL_FRect rect)
+{
+	SDL_assert(context);
+	Camera* camera = context->camera_active;
+
+	SDL_assert(camera);
+
+	vec2f camera_size;
+	camera_size.x = (context->window_w / camera->pixels_per_unit) * camera->normalized_screen_size.x;
+	camera_size.y = (context->window_h / camera->pixels_per_unit) * camera->normalized_screen_size.y;
+
+	vec2f camera_offset;
+	camera_offset.x = (context->window_w / camera->pixels_per_unit)* camera->normalized_screen_offset.x;
+	camera_offset.y = (context->window_h / camera->pixels_per_unit)* camera->normalized_screen_offset.y;
+
 	vec2f pos  = vec2f{ rect.x, rect.y };
 	vec2f size = vec2f{ rect.w, rect.h };
 
-	pos = pos - camera->position;
+	pos = pos - camera->world_position;
 	pos = pos * camera->zoom;
-	pos = pos + camera->size / 2;
-	pos.y = camera->size.y - pos.y - size.y * camera->zoom;
+	// pos = pos + camera->normalized_screen_size / 2;
+	// pos.y = camera->normalized_screen_size.y - pos.y - size.y * camera->zoom;
+	pos = pos + camera_size / 2;
+	pos.y = camera_size.y - pos.y - size.y * camera->zoom;
 	
 	SDL_FRect ret;
 	ret.w = camera->pixels_per_unit * size.x * camera->zoom;
 	ret.h = camera->pixels_per_unit * size.y * camera->zoom;
-	ret.x = camera->pixels_per_unit * pos.x;
-	ret.y = camera->pixels_per_unit * pos.y;
+	// ret.x = camera->pixels_per_unit * pos.x;
+	// ret.y = camera->pixels_per_unit * pos.y;
+	ret.x = camera->pixels_per_unit * pos.x + camera_offset.x;
+	ret.y = camera->pixels_per_unit * pos.y + camera_offset.y;
 
 	return ret;
 }
 
-inline vec2f point_global_to_screen(Camera* camera, vec2f p)
+
+float size_global_to_screen(SDLContext* context, float size)
 {
+	SDL_assert(context);
+	Camera* camera = context->camera_active;
+
+	SDL_assert(camera);
+
+	return size * camera->pixels_per_unit * camera->zoom;
+}
+
+// converts the given point to the viewport of the given camera
+vec2f point_global_to_screen(SDLContext* context,vec2f p)
+{
+	SDL_assert(context);
+	Camera* camera = context->camera_active;
+
+	SDL_assert(camera);
+
+	vec2f camera_size;
+	camera_size.x = (context->window_w / camera->pixels_per_unit) * camera->normalized_screen_size.x;
+	camera_size.y = (context->window_h / camera->pixels_per_unit) * camera->normalized_screen_size.y;
+	
+	vec2f camera_offset;
+	camera_offset.x = (context->window_w / camera->pixels_per_unit)* camera->normalized_screen_offset.x;
+	camera_offset.y = (context->window_h / camera->pixels_per_unit)* camera->normalized_screen_offset.y;
+
 	vec2f ret = p;
-	ret = ret - camera->position;
+	ret = ret - camera->world_position;
 	ret = ret * camera->zoom;
-	ret = ret + camera->size / 2;
-	ret.y = camera->size.y - ret.y;
-	ret = ret * camera->pixels_per_unit;
+	ret = ret + camera_size / 2;
+	ret.y = camera_size.y - ret.y;
+	ret = ret * camera->pixels_per_unit + camera_offset;
 
 	return ret;
 }
 
-inline vec2f point_screen_to_global(Camera* camera, vec2f p)
+// converts the given point from the viewport of the given camera to world space
+vec2f point_screen_to_global(SDLContext* context, vec2f p)
 {
+	SDL_assert(context);
+	Camera* camera = context->camera_active;
+
+	SDL_assert(camera);
+
+	vec2f camera_size;
+	camera_size.x = (context->window_w / camera->pixels_per_unit) * camera->normalized_screen_size.x;
+	camera_size.y = (context->window_h / camera->pixels_per_unit) * camera->normalized_screen_size.y;
+
+	vec2f camera_offset;
+	camera_offset.x = (context->window_w / camera->pixels_per_unit)* camera->normalized_screen_offset.x;
+	camera_offset.y = (context->window_h / camera->pixels_per_unit)* camera->normalized_screen_offset.y;
+
 	vec2f ret = p;
 	ret = ret / camera->pixels_per_unit;
-	ret.y = camera->size.y - ret.y;
-	ret = ret - camera->size / 2;
+	ret.y = camera_size.y - ret.y;
+	ret = ret - camera_offset;
+	ret = ret - camera_size / 2;
 	ret = ret / camera->zoom;
-	ret = ret + camera->position;
+	ret = ret + camera->world_position;
 
 	return ret;
 }
 
 void sdl_input_clear(SDLContext* context)
 {
+	context->mouse_scroll = 0;
+
 	for(int i = 0; i < BTN_TYPE_MAX; ++i)
 		context->btn_isjustpressed[i] = false;
 }
@@ -137,10 +231,17 @@ void sdl_input_key_process(SDLContext* context, BtnType button_id, SDL_Event* ev
 {
 	context->btn_isdown[button_id] = event->key.down;
 	context->btn_isjustpressed[button_id] = event->key.down && !event->key.repeat;
-
 }
 
-static SDL_Texture* texture_create(SDLContext* context, const char* path, SDL_ScaleMode mode)
+// Auxiliary function to process low-frequency inputs.
+// May drop inputs that are firing higher than the current framerate
+void sdl_input_mouse_button_process(SDLContext* context, BtnType button_id, SDL_Event* event)
+{
+	context->btn_isjustpressed[button_id] = event->button.down && !context->btn_isjustpressed[button_id];
+	context->btn_isdown[button_id] = event->button.down;
+}
+
+SDL_Texture* texture_create(SDLContext* context, const char* path, SDL_ScaleMode mode)
 {
 	// texture could accept which pixel format it has as parameter, but this for now seems good enough
 	const SDL_PixelFormat pixel_format = SDL_PIXELFORMAT_ABGR8888;
@@ -166,21 +267,39 @@ static SDL_Texture* texture_create(SDLContext* context, const char* path, SDL_Sc
 	return ret;
 }
 
-inline void sdl_set_render_draw_color(SDLContext* context, color c)
+void sdl_set_render_draw_color(SDLContext* context, color c)
 {
 	SDL_SetRenderDrawColorFloat(context->renderer, c.r, c.g, c.b, c.a);
 }
 
-inline void sdl_set_texture_tint(SDL_Texture* texture, color c)
+void sdl_set_texture_tint(SDL_Texture* texture, color c)
 {
 	SDL_SetTextureColorModFloat(texture, c.r, c.g, c.b);
 	SDL_SetTextureAlphaModFloat(texture, c.a);
 }
 
-#endif // ITU_LIB_ENGINE_HPP
+void sdl_render_diagnostics(SDLContext* context, float elapsed_work, float elapsed_frame)
+{
+	SDL_SetRenderDrawColor(context->renderer, 0x0, 0x00, 0x00, 0xCC);
+	SDL_FRect rect = SDL_FRect{ 5, 5, 145, 25 };
+	SDL_RenderFillRect(context->renderer, &rect);
+		 
+	SDL_SetRenderDrawColor(context->renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+	SDL_RenderDebugTextFormat(context->renderer, 10, 10, "work: %6.3f ms/f", (float)elapsed_work  / (float)MILLIS(1));
+	SDL_RenderDebugTextFormat(context->renderer, 10, 20, "tot : %6.3f ms/f", (float)elapsed_frame / (float)MILLIS(1));
+}
 
-#if (defined ITU_LIB_ENGINE_IMPLEMENTATION) || (defined ITU_UNITY_BUILD)
+// busy waits to introduce artificial delay
+void engine_artificial_delay(float delay_ms, float delay_spread_ms)
+{
+	SDL_Time walltime_start;
+	SDL_Time walltime_busywait;
+	SDL_Time target_wait = (delay_ms + (SDL_randf() - 0.5f) * delay_spread_ms) * 1000000;
 
-
-
+	SDL_GetCurrentTime(&walltime_start);
+	walltime_busywait = walltime_start;
+	while(walltime_busywait - walltime_start < target_wait)
+		SDL_GetCurrentTime(&walltime_busywait);
+}
+					
 #endif // ITU_LIB_ENGINE_IMPLEMENTATION
