@@ -1,5 +1,5 @@
 #define TEXTURE_PIXELS_PER_UNIT 128
-#define CAMERA_PIXELS_PER_UNIT  128
+#define CAMERA_PIXELS_PER_UNIT  16
 
 #include <itu_unity_include.hpp>
 
@@ -70,7 +70,7 @@ static void game_init(SDLContext* context, GameState* state)
 	// TODO allocate space for tile info (when we'll load those from file)
 
 	// texture atlases
-	state->atlas = texture_create(context, "data/kenney/simpleSpace_tilesheet_2.png", SDL_SCALEMODE_LINEAR);
+	state->atlas = texture_create(context, "data/kenney/tiny_dungeon_packed.png", SDL_SCALEMODE_NEAREST);
 	state->bg    = texture_create(context, "data/kenney/prototype_texture_dark/texture_13.png", SDL_SCALEMODE_LINEAR);
 }
 
@@ -96,7 +96,7 @@ static void game_reset(SDLContext* context, GameState* state)
 		itu_lib_sprite_init(
 			&state->player->sprite,
 			state->atlas,
-			itu_lib_sprite_get_rect(0, 1, 128, 128)
+			itu_lib_sprite_get_rect(0, 9, 16, 16)
 		);
 
 		// raise sprite a bit, so that the position concides with the center of the image
