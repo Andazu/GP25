@@ -1,11 +1,6 @@
 #define TEXTURE_PIXELS_PER_UNIT 64   // how many pixels of textures will be mapped to a single world unit
 #define CAMERA_PIXELS_PER_UNIT  32   // how many pixels of windows will be used to render a single world unit
 
-#include <itu_unity_include.hpp>
-
-#include "ES05_sys_audio.hpp"
-#include "ES05_sys_animation.hpp"
-
 #define ENABLE_DIAGNOSTICS
 
 // rendering framerate
@@ -19,6 +14,11 @@
 
 #define WINDOW_W         800
 #define WINDOW_H         600
+
+#include <itu_unity_include.hpp>
+
+#include "ES05_sys_audio.hpp"
+#include "ES05_sys_animation.hpp"
 
 #define ENTITY_COUNT   1024
 #define PLATFORM_COUNT   32
@@ -262,7 +262,7 @@ void door_update(SDLContext* context, Entity* entity, DoorData* data)
 	//       in this case however, we don't wont the door to overshoot its targets, so we will clamp it
 	data->animation_current_t = SDL_clamp(data->animation_current_t, 0.0f, 1.0f);
 
-	// apply easing (I went ahead and dumped them all int `itu_common.cpp` in a fancy package
+	// apply easing (I went ahead and dumped them all int `itu_common.cpp` in a fancy package)
 
 	//float v = data->animation_current_t;
 	float v = easing(data->animation_current_t, fn_easing);
@@ -601,7 +601,7 @@ int main(void)
 			ImGui::End();
 		}
 #endif
-		
+
 		itu_lib_imgui_frame_end(&context);
 
 		SDL_GetCurrentTime(&walltime_work_end);
